@@ -1,0 +1,214 @@
+---
+title: "Time Series Analysis of The US Natural Gas Consumption"
+date: "2024-01-04"
+output: pdf_document
+---
+
+```{r}
+
+ns_2 <- read.csv("C:/Users/PC/Downloads/ns-2.csv", header = F)
+
+plot(ns_2$V2,type='o',ylab="naturalgas consumption billion cubic feet",xlab="Year",main="Time series plot for natural gas consumption data") 
+ts_data = ts(ns_2$V2,start=c(2008,1), frequency = 12)
+hist(ts_data, main="Histogram of US Natural Gas Consumption") #skewness
+lx = log(ts_data) #Log to eliminate SKEWNESS
+hist(lx, main="Hist. Log of US Natural Gas Consumption")
+```
+
+
+```{r }
+plot(decompose(ts_data)$trend, main="Trend Component of Log US Natural Gas Consumption")# Plot the trend component 
+```
+
+
+
+```{r}
+# Since there is an obvious upward trend, we need to take that trend out 
+m1 <- lm(ts_data ~ time(ts_data))
+#summary(m1)
+rNS = ts(resid(m1),start=c(2008,1),freq=12)
+plot(rNS, main= "Detrended Component of US Natural Gas Consumption") 
+```
+
+```{r }
+acf(rNS, main= "Detrended Component of US Natural Gas Consumption")
+```
+
+```{r}
+library(TSA) 
+# Plot the seasonal component
+plot(decompose(rNS)$seasonal, main="Seasonal Component of US Natural Gas Consumption")
+month=season(decompose(rNS)$seasonal)
+```
+
+```{r}
+#plot Residuals from Linear Regression + Seaonal Component model
+m2=lm(ts_data~season(ts_data))
+plot(resid(m2), main="Residuals from Linear Regression + Seaonal Component model") 
+```
+
+```{r}
+library(TSA)
+m3 = lm(ts_data~season(ts_data)+time(ts_data))
+#summary(m3)
+resid3 = ts(resid(m3),start=c(2008,1),freq=1) 
+lx3=residuals(m3)
+#plot Residuals from Linear + Seaonal + Time Component model
+plot(resid3, main="Residuals from Linear + Seaonal + Time Component model", type="o")
+abline(h=0,lty=2)
+```
+
+```{r}
+acf(resid3,main="Residuals from Linear + Seaonal + Time Component model")
+```
+
+```{r}
+pacf(resid3,main="Residuals from Linear + Seaonal + Time Component model") 
+```
+
+```{r}
+eacf(resid3) 
+```
+
+```{r}
+####tm and tm squared 
+tm=time(lx)
+tm2=time(lx)^2
+#summary of m3
+summary(m3)
+```
+
+```{r}
+#Quadratic Model
+model4=lm(lx~month+tm+tm2)
+summary(model4)
+
+```
+
+```{r }
+#Linear model
+m4 = lm(lx~month + tm) 
+summary(m4)
+```
+
+```{r}
+# Fit the models
+model4 <- lm(lx~ month + time(lx) + I(time(lx)^2)) 
+m4 <- lm(lx~ month + tm)
+
+# Calculate the BIC values for each model (including the Linear + Seaonal + Time Component model)
+bic_Quadratic <- BIC(model4) 
+bic_Linear <- BIC(m4)
+bic_l.s.t <- BIC(m3)
+bic_Quadratic
+bic_Linear
+bic_l.s.t
+
+```
+
+```{r}
+#Based on BIC continue with the quadratic model 
+f.lx4=ts(fitted(model4),start=c(2008,1),freq=12) 
+#lines(f.lx4,col=2,lty=2)
+lx4=residuals(model4)
+# Check the diagnostics of this deterministic trend model 
+# 1) Residual plot (zero mean and homoscedasticity)
+plot(rstandard(model4), main="diagnostics of deterministic trend model") 
+abline(h=0,col=2)
+```
+
+```{r}
+# 2) QQ plot (normality)
+qqnorm(lx4, main= "Residuals from Deterministic Model") 
+qqline(lx4)
+```
+
+```{r }
+# 3) Shapiro-Wilk test (normality) and runs test (independence) 
+shapiro.test(lx4)
+runs(lx4)
+```
+
+```{r }
+# 4) ACF plot (independence)
+acf(lx4,main= "ACF of Deterministic Model") 
+pacf(lx4, main= "PACF of Deterministic Model") 
+```
+
+```{r }
+# d
+library(tseries)
+adf.test(lx4) 
+pp.test(lx4) 
+kpss.test(lx4)
+```
+
+```{r}
+# P	and q 
+par(mfrow=c(1,2)) 
+acf(lx4)	# MA(3) pacf(1x4)	# AR(1) par(mfrow=c(1,1))
+eacf(lx4)	# MA(3), AR(1), ARMA(2,2), ARMA(1,2)
+```
+```{r}
+
+library(forecast)
+auto.arima(lx4) # AR(1)
+
+# Candidate models could be MA(3), AR(1), or ARMA(2,2) 
+ma3=Arima(lx4,order=c(0,0,3),include.mean=F) # 
+ar1=Arima(lx4,order=c(1,0,0),include.mean=F) 
+arma22=Arima(lx4,order=c(2,0,2),include.mean=F) #
+```
+
+```{r}
+library(TSA) 
+res=armasubsets(y=lx4,nar=10,nma=10,y.name='test',ar.method='ols')
+plot(res, main="BIC of Deterministic Model") # default is BIC
+```
+
+```{r}
+# AR(1) model is chosen based on BIC 
+plot(res,scale='AIC')
+```
+
+```{r}
+plot(res,scale='AICc') # more complicated models are suggested from AIC and AICc criterions.
+```
+
+```{r}
+# Model diagnostics 
+library(TSA)
+tsdiag(ma3) 
+tsdiag(ar1)
+tsdiag(arma22)
+```
+
+```{r}
+
+##### Let's try forecasting for the next three years ##### based on the AR(1) model
+newtm=seq(from=2021,to=2024.917,length=36)
+newdata=data.frame(month=as.factor(month[1:36]),tm=newtm,tm2=newtm^2)
+predxreg=predict(m4,newdata)  ## prediction of the deterministic trend portion
+##### based on the AR(1) model
+predx=predict(ar1,n.ahead=36) ## prediction of the stationary error portion 
+pr=predx$pred+predxreg
+uci=pr+2*predx$se 
+lci=pr-2*predx$se
+# To plot the predicted values as prediction intervals, code them as time series 
+pr=ts(pr,start=2021,freq=12)
+uci=ts(uci,start=2021,freq=12)
+lci=ts(lci,start=2021,freq=12)
+
+ymin=min(c(as.vector(lci),lx))-.1 
+ymax=max(c(as.vector(uci),lx))+.1
+
+plot(lx,xlim=c(2008,2024),ylim=c(ymin,ymax),main="log of Natural gas consumption") 
+lines(pr,col=2)
+lines(uci,col=3) 
+lines(lci,col=3)
+# In the original scale..
+plot(exp(lx),ylab="Natural gas consumption in cubic billion feet",main="Natural Gas Consumption",xlim=c(2008,2024),ylim=c(exp(ymin),exp(ymax)))
+lines(exp(pr),col=2) 
+lines(exp(uci),col=3) 
+lines(exp(lci),col=3)
+```
